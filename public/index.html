@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FeedMaster Pro - E-Ink Style</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="top-nav">
+    <div class="brand">
+      <img src="logo.png" alt="Logo" class="logo">
+      <span class="app-name">FeedMaster Pro</span>
+    </div>
+    <div class="top-nav-center">
+      <div class="fetch-bar">
+        <input type="text" id="rssUrl" placeholder="Add a feed URL..." />
+        <button id="fetchFeed">Fetch</button>
+      </div>
+    </div>
+    <div class="top-nav-right">
+      <div class="user-avatar">
+        <img src="avatar.png" alt="User Avatar" class="avatar">
+      </div>
+    </div>
+  </nav>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <ul class="nav-list">
+        <li class="nav-item active" data-view="myfeeds">
+          <span class="icon">📜</span><span class="label">My Feeds</span>
+        </li>
+        <li class="nav-item" data-view="explore">
+          <span class="icon">🧭</span><span class="label">Explore</span>
+        </li>
+        <li class="nav-item" data-view="settings">
+          <span class="icon">⚙️</span><span class="label">Settings</span>
+        </li>
+      </ul>
+    </aside>
+
+    <main class="main-content">
+      <!-- MY FEEDS VIEW -->
+      <div class="view view-myfeeds" style="display:none;">
+        <h2>My Feeds</h2>
+        <p>Manage your saved feeds. Favorites appear at the top.</p>
+        <div id="dashboardFeeds" class="dashboard-feeds"></div>
+        <div id="feedDetailContainer" class="feed-detail-container" style="display:none;">
+          <div class="detail-header">
+            <h2 id="currentFeedTitle"></h2>
+            <button id="saveFeedBtn" class="save-feed-btn" style="display:none;">★ Save this Feed</button>
+          </div>
+          <ul id="feedList" class="feed-list" style="display:none;"></ul>
+        </div>
+      </div>
+
+      <!-- EXPLORE VIEW -->
+      <div class="view view-explore" style="display:none;">
+        <h2>Explore Feeds</h2>
+        <p>Discover and add new feeds to your collection:</p>
+        <div id="suggestedFeeds" class="suggested-feeds"></div>
+      </div>
+
+      <!-- SETTINGS VIEW -->
+      <div class="view view-settings" style="display:none;">
+        <h2>Settings</h2>
+        <p>Adjust preferences, API keys, and more here.</p>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Slide-in Detail Panel for an Individual Feed Item -->
+  <div id="itemDetailPanel" class="item-detail-panel">
+    <button id="closeItemDetail" class="close-detail">×</button>
+    <div id="itemDetailContent" class="item-detail-content"></div>
+  </div>
+
+  <div id="loader" class="loader" style="display: none;"></div>
+
+  <script>
+    let currentView = 'myfeeds';
+    let currentFeedUrl = null;
+    let currentFeedTitle = 'Untitled Feed';
+
+const suggestedFeeds = [
+  // --- General & World News ---
+  { title: "BBC News - World", url: "http://feeds.bbci.co.uk/news/world/rss.xml" },
+  { title: "BBC News - UK", url: "http://feeds.bbci.co.uk/news/uk/rss.xml" },
+  { title: "BBC News - Technology", url: "http://feeds.bbci.co.uk/news/technology/rss.xml" },
+  { title: "CNN - Top Stories", url: "http://rss.cnn.com/rss/edition.rss" },
+  { title: "CNN - World", url: "http://rss.cnn.com/rss/edition_world.rss" },
+  { title: "Reuters - Top News", url: "http://feeds.reuters.com/reuters/topNews" },
+  { title: "The Guardian - World News", url: "https://www.theguardian.com/world/rss" },
+  { title: "Al Jazeera English", url: "https://www.aljazeera.com/xml/rss/all.xml" },
+  { title: "NPR - News", url: "https://www.npr.org/rss/rss.php?id=1001" },
+  { title: "New York Times - Home Page", url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml" },
+  { title: "Washington Post - Politics", url: "http://feeds.washingtonpost.com/rss/politics" },
+  { title: "LA Times - World News", url: "https://www.latimes.com/world-nation/rss2.0.xml" },
+  { title: "CBC News - World", url: "https://www.cbc.ca/cmlink/rss-world" },
+  { title: "ABC News (US) - Top Stories", url: "https://feeds.abcnews.com/abcnews/topstories" },
+  { title: "Sky News - World", url: "https://feeds.skynews.com/feeds/rss/world.xml" },
+
+  // --- Technology & Science ---
+  { title: "Ars Technica", url: "http://feeds.arstechnica.com/arstechnica/index" },
+  { title: "Wired - All Stories", url: "https://www.wired.com/feed/rss" },
+  { title: "The Verge - All Posts", url: "https://www.theverge.com/rss/index.xml" },
+  { title: "Engadget", url: "https://www.engadget.com/rss.xml" },
+  { title: "TechCrunch", url: "http://feeds.feedburner.com/Techcrunch" },
+  { title: "Hacker News (Top Stories)", url: "https://hnrss.org/frontpage" },
+  { title: "Slashdot", url: "http://rss.slashdot.org/Slashdot/slashdotMain" },
+  { title: "Gizmodo", url: "https://gizmodo.com/rss" },
+  { title: "MIT Technology Review", url: "https://www.technologyreview.com/feed/" },
+  { title: "Popular Science", url: "https://www.popsci.com/rss/" },
+  { title: "ScienceDaily - Top News", url: "https://www.sciencedaily.com/rss/top/science.xml" },
+  { title: "Nature - Latest Research", url: "https://www.nature.com/nature/articles?type=article.rss" },
+  { title: "New Scientist", url: "https://www.newscientist.com/feed/home" },
+
+  // --- Design & Development ---
+  { title: "Smashing Magazine", url: "https://www.smashingmagazine.com/feed" },
+  { title: "A List Apart", url: "https://alistapart.com/main/feed/" },
+  { title: "CSS-Tricks", url: "http://feeds.feedburner.com/CssTricks" },
+  { title: "Web Designer Depot", url: "https://www.webdesignerdepot.com/feed" },
+  { title: "UX Booth", url: "https://www.uxbooth.com/feed" },
+  { title: "Codrops", url: "http://tympanus.net/codrops/feed/" },
+  { title: "Design Milk", url: "https://design-milk.com/feed/" },
+
+  // --- Business & Finance ---
+  { title: "Bloomberg", url: "https://www.bloomberg.com/feed/podcast" }, // Bloomberg podcasts, or check news feeds
+  { title: "Financial Times - World", url: "http://www.ft.com/rss/world" },
+  { title: "Wall Street Journal - World News", url: "http://www.wsj.com/xml/rss/3_7085.xml" },
+  { title: "Forbes - Most Popular", url: "https://www.forbes.com/most-popular/feed/" },
+  { title: "MarketWatch - Top Stories", url: "https://www.marketwatch.com/rss/topstories" },
+
+  // --- Sports ---
+  { title: "ESPN - Top Headlines", url: "https://www.espn.com/espn/rss/news" },
+  { title: "BBC Sport", url: "http://feeds.bbci.co.uk/sport/rss.xml?edition=uk" },
+  { title: "Sky Sports - Main News", url: "https://www.skysports.com/rss/12040" },
+  { title: "FOX Sports", url: "https://www.foxsports.com/feedout/syndicatedContent?categoryId=1" },
+
+  // --- Entertainment & Culture ---
+  { title: "Rolling Stone", url: "https://www.rollingstone.com/feed/" },
+  { title: "NPR - Music", url: "https://www.npr.org/rss/rss.php?id=1039" },
+  { title: "Variety", url: "https://variety.com/feed/" },
+  { title: "Vulture - TV News", url: "http://feeds.feedburner.com/vulture/tv" },
+  { title: "Pitchfork", url: "https://pitchfork.com/feed/" },
+
+  // --- Lifestyle & Travel ---
+  { title: "Lonely Planet", url: "https://www.lonelyplanet.com/blog/feed" },
+  { title: "National Geographic Travel", url: "https://www.nationalgeographic.com/content/natgeo/en_US/travel/index.rss" },
+  { title: "Conde Nast Traveler", url: "https://www.cntraveler.com/rss" },
+  { title: "Lifehacker", url: "https://lifehacker.com/rss" },
+  { title: "Apartment Therapy", url: "https://www.apartmenttherapy.com/feed" },
+
+  // --- Culinary & Food ---
+  { title: "Serious Eats", url: "https://www.seriouseats.com/rss" },
+  { title: "Epicurious", url: "https://www.epicurious.com/services/rss" },
+  { title: "Eater", url: "https://www.eater.com/rss/index.xml" },
+  { title: "The Kitchn", url: "https://www.thekitchn.com/rss" },
+
+  // --- Additional Tech & Geek Culture ---
+  { title: "Reddit - r/technology", url: "https://www.reddit.com/r/technology/.rss" },
+  { title: "Boing Boing", url: "http://feeds.boingboing.net/boingboing/iBag" },
+  { title: "Daring Fireball (Apple/Tech)", url: "https://daringfireball.net/feeds/main" },
+  { title: "MacRumors", url: "https://www.macrumors.com/feed/" },
+
+  // --- Science & Nature Continued ---
+  { title: "National Geographic - All", url: "https://www.nationalgeographic.com/content/natgeo/en_US/index.rss" },
+  { title: "Popular Mechanics", url: "https://www.popularmechanics.com/rss/all.xml/" },
+  { title: "NASA Breaking News", url: "https://www.nasa.gov/rss/dyn/breaking_news.rss" },
+  
+  // You could add many more from reliable sources as needed
+];
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+      setupNav();
+      switchView('myfeeds');
+      loadSavedFeeds();
+      renderSuggestedFeeds();
+    });
+
+    function setupNav() {
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+          document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+          item.classList.add('active');
+          const view = item.getAttribute('data-view');
+          switchView(view);
+        });
+      });
+    }
+
+    function switchView(view) {
+      currentView = view;
+      document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
+      document.querySelector(`.view-${view}`).style.display = 'block';
+      if (view === 'myfeeds') {
+        document.getElementById('feedDetailContainer').style.display = 'none';
+      }
+    }
+
+    function renderSuggestedFeeds() {
+      const container = document.getElementById('suggestedFeeds');
+      container.innerHTML = '';
+      suggestedFeeds.forEach(sf => {
+        const div = document.createElement('div');
+        div.className = 'suggested-feed-item';
+        div.textContent = sf.title;
+        div.addEventListener('click', () => {
+          document.getElementById('rssUrl').value = sf.url;
+          fetchFeed();
+          switchView('myfeeds');
+        });
+        container.appendChild(div);
+      });
+    }
+
+    document.getElementById('fetchFeed').addEventListener('click', fetchFeed);
+    document.getElementById('rssUrl').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') fetchFeed();
+    });
+
+    async function fetchFeed() {
+      const rssUrlInput = document.getElementById('rssUrl');
+      const rssUrl = rssUrlInput.value.trim();
+      if (!rssUrl) {
+        showToast('Please enter a URL.', 'info');
+        return;
+      }
+
+      document.getElementById('loader').style.display = 'block';
+      const feedUrl = await discoverFeedUrl(rssUrl);
+      if (!feedUrl) {
+        showToast('No valid RSS feed found.', 'error');
+        document.getElementById('loader').style.display = 'none';
+        return;
+      }
+
+      try {
+        const response = await fetch(`/fetchFeed?url=${encodeURIComponent(feedUrl)}`);
+        const text = await response.text();
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(text, 'application/xml');
+        if (xml.querySelector('parsererror')) {
+          showToast('Error parsing feed.', 'error');
+          document.getElementById('loader').style.display = 'none';
+          return;
+        }
+
+        const feedTitleNode = xml.querySelector('channel > title, feed > title');
+        currentFeedTitle = feedTitleNode ? feedTitleNode.textContent.trim() : 'Untitled Feed';
+        currentFeedUrl = feedUrl;
+
+        const items = parseFeedItems(xml.querySelectorAll('item, entry'));
+        renderFeedDetail(items, currentFeedTitle);
+        showSaveFeedButton();
+      } catch (error) {
+        console.error('Error fetching RSS feed:', error);
+        showToast('Something went wrong.', 'error');
+      }
+      document.getElementById('loader').style.display = 'none';
+    }
+
+    function parseFeedItems(items) {
+      const feedItems = [];
+      items.forEach(item => {
+        const title = item.querySelector('title') ? item.querySelector('title').textContent : 'No title';
+        let link = '';
+        if (item.querySelector('link')) {
+          link = item.querySelector('link').getAttribute('href') || item.querySelector('link').textContent;
+        }
+        const description = item.querySelector('description') ? item.querySelector('description').textContent : '';
+        const pubDate = item.querySelector('pubDate') ? item.querySelector('pubDate').textContent :
+                        (item.querySelector('updated') ? item.querySelector('updated').textContent : '');
+        const content = item.querySelector('content\\:encoded') ? item.querySelector('content\\:encoded').textContent :
+                        (item.querySelector('content') ? item.querySelector('content').textContent : description);
+        const thumbnail = item.querySelector('media\\:thumbnail') ? item.querySelector('media\\:thumbnail').getAttribute('url') : '';
+        feedItems.push({ title, link, description, pubDate, content, thumbnail });
+      });
+      return feedItems;
+    }
+
+    function renderFeedDetail(items, title) {
+      document.getElementById('feedDetailContainer').style.display = 'block';
+      document.getElementById('currentFeedTitle').textContent = title;
+
+      const feedList = document.getElementById('feedList');
+      feedList.style.display = 'grid';
+      feedList.innerHTML = '';
+      items.forEach((item) => {
+        const li = document.createElement('li');
+        li.className = 'feed-item';
+        li.innerHTML = `
+          ${item.thumbnail ? `<img src="${item.thumbnail}" alt="Thumbnail">` : ''}
+          <div class="feed-item-content">
+            <h2>${item.title}</h2>
+            <p><strong>${item.pubDate ? new Date(item.pubDate).toLocaleDateString() : ''}</strong></p>
+            <p>${stripHtml(item.description).slice(0, 100)}...</p>
+            <a href="#" class="read-more">Read More</a>
+          </div>
+        `;
+        li.querySelector('.read-more').addEventListener('click', (e) => {
+          e.preventDefault();
+          openItemDetail(item);
+        });
+        feedList.appendChild(li);
+      });
+    }
+
+    function showSaveFeedButton() {
+      const savedFeeds = JSON.parse(localStorage.getItem('savedFeeds')) || [];
+      const alreadySaved = savedFeeds.some(f => f.url === currentFeedUrl);
+      const saveBtn = document.getElementById('saveFeedBtn');
+      if (!alreadySaved) {
+        saveBtn.textContent = '★ Save this Feed';
+        saveBtn.style.display = 'inline-block';
+      } else {
+        saveBtn.style.display = 'none';
+      }
+    }
+
+    document.getElementById('saveFeedBtn').addEventListener('click', () => {
+      saveFeedToLocalStorage(currentFeedUrl, currentFeedTitle);
+    });
+
+    function saveFeedToLocalStorage(url, title) {
+      let savedFeeds = JSON.parse(localStorage.getItem('savedFeeds')) || [];
+      if (!savedFeeds.find(f => f.url === url)) {
+        savedFeeds.push({
+          url: url,
+          title: title || 'Untitled Feed',
+          favorite: true,
+          lastUpdated: new Date().toISOString()
+        });
+        localStorage.setItem('savedFeeds', JSON.stringify(savedFeeds));
+        showToast('Feed saved and favorited!', 'success');
+        loadSavedFeeds();
+        document.getElementById('saveFeedBtn').style.display = 'none';
+      } else {
+        showToast('This feed is already saved.', 'info');
+      }
+    }
+
+    async function discoverFeedUrl(url) {
+      try {
+        if (url.includes('youtube.com')) {
+          const response = await fetch(`/resolveYouTubeChannel?url=${encodeURIComponent(url)}`);
+          if (response.ok) {
+            const data = await response.json();
+            const channelId = data.channelId;
+            if (channelId) return `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+            else {
+              showToast('Could not resolve YouTube URL.', 'info');
+              return null;
+            }
+          } else {
+            showToast('Error resolving YouTube channel.', 'error');
+            return null;
+          }
+        }
+
+        const commonExtensions = ['/feed', '/rss', '/rss.xml', '/feed.xml', '/atom.xml', '.atom'];
+        for (const ext of commonExtensions) {
+          const testUrl = url.replace(/\/$/, '') + ext;
+          if (await isValidFeed(testUrl)) return testUrl;
+        }
+
+        const feedLink = await findFeedLinkInPage(url);
+        if (feedLink) return feedLink;
+        return null;
+      } catch (error) {
+        console.error('Error discovering feed URL:', error);
+        return null;
+      }
+    }
+
+    async function isValidFeed(feedUrl) {
+      try {
+        const response = await fetch(`/fetchFeed?url=${encodeURIComponent(feedUrl)}`);
+        if (!response.ok) return false;
+        const text = await response.text();
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(text, 'application/xml');
+        if (xml.querySelector('parsererror')) return false;
+        const items = xml.querySelectorAll('item, entry');
+        return items.length > 0;
+      } catch (error) {
+        console.error(`Failed to validate feed ${feedUrl}:`, error);
+        return false;
+      }
+    }
+
+    async function findFeedLinkInPage(pageUrl) {
+      try {
+        const response = await fetch(`/fetchFeed?url=${encodeURIComponent(pageUrl)}`);
+        const text = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, 'text/html');
+        const linkTags = doc.querySelectorAll('link[type="application/rss+xml"], link[type="application/atom+xml"]');
+        if (linkTags.length > 0) {
+          const feedHref = linkTags[0].getAttribute('href');
+          const absoluteFeedUrl = new URL(feedHref, pageUrl).href;
+          if (await isValidFeed(absoluteFeedUrl)) return absoluteFeedUrl;
+        }
+        return null;
+      } catch (error) {
+        console.error('Error finding feed link in page:', error);
+        return null;
+      }
+    }
+
+    function loadSavedFeeds() {
+      const savedFeeds = JSON.parse(localStorage.getItem('savedFeeds')) || [];
+      const dashboardContainer = document.getElementById('dashboardFeeds');
+      dashboardContainer.innerHTML = '';
+
+      const favoriteFeeds = savedFeeds.filter(f => f.favorite);
+      const normalFeeds = savedFeeds.filter(f => !f.favorite);
+
+      if (favoriteFeeds.length > 0) {
+        const favHeader = document.createElement('h3');
+        favHeader.textContent = 'Favorites';
+        dashboardContainer.appendChild(favHeader);
+        favoriteFeeds.forEach(feed => dashboardContainer.appendChild(createFeedCard(feed)));
+      }
+
+      if (normalFeeds.length > 0) {
+        const allHeader = document.createElement('h3');
+        allHeader.textContent = 'All Feeds';
+        dashboardContainer.appendChild(allHeader);
+        normalFeeds.forEach(feed => dashboardContainer.appendChild(createFeedCard(feed)));
+      }
+    }
+
+    function createFeedCard(feed) {
+      const feedItem = document.createElement('div');
+      feedItem.className = 'dashboard-feed-item';
+
+      const star = document.createElement('span');
+      star.className = feed.favorite ? 'star favorite' : 'star';
+      star.innerHTML = '★';
+      star.title = feed.favorite ? "Remove this feed" : "Mark as favorite";
+      star.addEventListener('click', () => {
+        if (feed.favorite) {
+          showRemovalConfirmation(feedItem, feed.url);
+        } else {
+          toggleFavorite(feed.url);
+        }
+      });
+
+      const title = document.createElement('h3');
+      title.textContent = feed.title;
+      title.addEventListener('click', () => openFeedDetail(feed.url));
+
+      const refreshButton = document.createElement('button');
+      refreshButton.textContent = 'Refresh';
+      refreshButton.addEventListener('click', () => refreshFeed(feed.url));
+
+      feedItem.appendChild(star);
+      feedItem.appendChild(title);
+      feedItem.appendChild(refreshButton);
+
+      return feedItem;
+    }
+
+    function showRemovalConfirmation(feedItem, url) {
+      const confirmDiv = document.createElement('div');
+      confirmDiv.className = 'remove-confirmation';
+      confirmDiv.textContent = 'Remove feed? ';
+
+      const yesBtn = document.createElement('button');
+      yesBtn.textContent = 'Yes';
+      yesBtn.className = 'confirm-btn';
+      yesBtn.addEventListener('click', () => {
+        removeFeedFromLocalStorage(url);
+        loadSavedFeeds();
+      });
+
+      const noBtn = document.createElement('button');
+      noBtn.textContent = 'No';
+      noBtn.className = 'cancel-btn';
+      noBtn.addEventListener('click', () => confirmDiv.remove());
+
+      confirmDiv.appendChild(yesBtn);
+      confirmDiv.appendChild(noBtn);
+
+      feedItem.appendChild(confirmDiv);
+    }
+
+    function removeFeedFromLocalStorage(url) {
+      let savedFeeds = JSON.parse(localStorage.getItem('savedFeeds')) || [];
+      savedFeeds = savedFeeds.filter(f => f.url !== url);
+      localStorage.setItem('savedFeeds', JSON.stringify(savedFeeds));
+      showToast('Feed removed.', 'info');
+    }
+
+    function toggleFavorite(url) {
+      let savedFeeds = JSON.parse(localStorage.getItem('savedFeeds')) || [];
+      const feed = savedFeeds.find(f => f.url === url);
+      if (feed) {
+        feed.favorite = true;
+        localStorage.setItem('savedFeeds', JSON.stringify(savedFeeds));
+        showToast('Feed marked as favorite.', 'success');
+        loadSavedFeeds();
+      }
+    }
+
+    async function openFeedDetail(url) {
+      document.getElementById('loader').style.display = 'block';
+
+      const response = await fetch(`/fetchFeed?url=${encodeURIComponent(url)}`);
+      const text = await response.text();
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(text, 'application/xml');
+
+      document.getElementById('loader').style.display = 'none';
+
+      if (xml.querySelector('parsererror')) {
+        showToast('Error parsing feed.', 'error');
+        return;
+      }
+
+      const titleNode = xml.querySelector('channel > title, feed > title');
+      const title = titleNode ? titleNode.textContent.trim() : 'Untitled Feed';
+
+      const items = parseFeedItems(xml.querySelectorAll('item, entry'));
+      currentFeedUrl = url;
+      currentFeedTitle = title;
+      renderFeedDetail(items, title);
+      showSaveFeedButton();
+    }
+
+    function refreshFeed(url) {
+      openFeedDetail(url);
+    }
+
+    function openItemDetail(item) {
+      const panel = document.getElementById('itemDetailPanel');
+      const contentDiv = document.getElementById('itemDetailContent');
+      contentDiv.innerHTML = `
+        <h2>${item.title}</h2>
+        <p>${stripHtml(item.content)}</p>
+        ${item.link ? `<p><a href="${item.link}" target="_blank">Open Full Article / Video</a></p>` : ''}
+      `;
+      panel.classList.add('open');
+    }
+
+    document.getElementById('closeItemDetail').addEventListener('click', () => {
+      document.getElementById('itemDetailPanel').classList.remove('open');
+    });
+
+    function showToast(message, type='info') {
+      const toastContainer = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      toastContainer.appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.add('fade-out');
+        toast.addEventListener('transitionend', () => toast.remove());
+      }, 3000);
+    }
+
+    function stripHtml(html) {
+      const tmp = document.createElement('DIV');
+      tmp.innerHTML = html;
+      return tmp.textContent || tmp.innerText || '';
+    }
+  </script>
+</body>
+</html>

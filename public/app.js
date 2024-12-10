@@ -1,37 +1,38 @@
 // app.js
 
-document.addEventListener('DOMContentLoaded', () => {
-    setupNav();
-    loadSavedFeeds(); // Load saved feeds on start
-    renderSuggestedFeeds(); // Populate Explore tab
-    loadUserAvatar(); // Load avatar on page load
-    setupPreviewModal(); // Initialize preview modal
-});
-
-/* =========================================
-   Global Variables
-========================================= */
 let currentView = 'myfeeds';
 let currentFeedUrl = null;
 let currentFeedTitle = null;
-let currentlyViewingFeed = null; // For a feed selected from Explore but not saved
-let isCurrentFeedSaved = false; // Track if current feed is saved (so we show/hide save button)
-
-// Suggested feeds array
-const suggestedFeeds = [
-    { title: 'TechCrunch', url: 'https://techcrunch.com/feed/' },
-    { title: 'BBC Sport', url: 'http://feeds.bbci.co.uk/sport/rss.xml' },
-    { title: 'David Shawe - Blog', url: 'https://davidshawe.com/feed.xml' },
-    { title: 'BBC News - World', url: 'http://feeds.bbci.co.uk/news/world/rss.xml' }
-];
-
-// Store full article data in memory for modal preview
-// Key: article title, Value: full description
+let currentlyViewingFeed = null;
+let isCurrentFeedSaved = false;
+let allFeedsData = [];
 const articleContentMap = new Map();
 
-/* =========================================
-   Navigation & Interaction
-========================================= */
+// Pagination settings for Explore
+let currentExplorePage = 1;
+const feedsPerPage = 20;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadAllFeedsData();
+    setupNav();
+    loadSavedFeeds();
+    loadUserAvatar();
+    setupPreviewModal();
+    showOnboardingIfNeeded();
+    renderSuggestedFeeds();
+});
+
+async function loadAllFeedsData() {
+  try {
+    const response = await fetch('/feeds.json');
+    const data = await response.json();
+    allFeedsData = data.feeds;
+  } catch (err) {
+    console.error('Failed to load feeds:', err);
+  }
+}
+
+/* Navigation & UI */
 function setupNav() {
     const fetchBtn = document.getElementById('fetchBtn');
     fetchBtn.addEventListener('click', () => {
@@ -61,10 +62,9 @@ function setupNav() {
         }
 
         const favItem = event.target.closest('.favorite-feed');
-        if (favItem) {
+        if (favItem && !event.target.classList.contains('remove-feed-btn') && !event.target.classList.contains('rename-icon')) {
             const url = favItem.getAttribute('data-url');
-            const title = favItem.textContent.trim();
-            // This feed is from favorites or currently viewing
+            const title = favItem.textContent.replace('✖', '').replace('✎','').trim();
             openFeedDetail(url, title, isFeedSaved(url));
         }
     });
@@ -73,7 +73,7 @@ function setupNav() {
         if ((event.key === 'Enter' || event.key === ' ') && event.target.classList.contains('favorite-feed')) {
             event.preventDefault();
             const url = event.target.getAttribute('data-url');
-            const title = event.target.textContent.trim();
+            const title = event.target.textContent.replace('✖','').replace('✎','').trim();
             openFeedDetail(url, title, isFeedSaved(url));
         }
     });
@@ -81,9 +81,24 @@ function setupNav() {
     const saveFeedBtn = document.getElementById('saveFeedBtn');
     saveFeedBtn.addEventListener('click', () => {
         if (currentFeedUrl && currentlyViewingFeed) {
-            // Save the currently viewing feed
             saveCurrentViewingFeed();
         }
+    });
+
+    const myFeedsHeading = document.getElementById('myFeedsHeading');
+    const sidebarEl = document.querySelector('.sidebar');
+    myFeedsHeading.addEventListener('click', () => {
+      sidebarEl.classList.toggle('collapsed');
+    });
+
+    document.getElementById('myFeedsSearch').addEventListener('input', loadSavedFeeds);
+    document.getElementById('exploreSearch').addEventListener('input', () => {
+        currentExplorePage = 1;
+        renderSuggestedFeeds();
+    });
+    document.getElementById('exploreCategoryFilter').addEventListener('change', () => {
+        currentExplorePage = 1;
+        renderSuggestedFeeds();
     });
 }
 
@@ -98,7 +113,6 @@ function switchView(view) {
         hideSaveFeedButton();
     } else {
         exploreContainer.classList.add('hidden');
-        // If a feed is selected show it, else show nothing
         if (currentFeedUrl) {
             feedDetailContainer.classList.remove('hidden');
         } else {
@@ -107,39 +121,136 @@ function switchView(view) {
     }
 }
 
-/* =========================================
-   Explore & Suggested Feeds
-========================================= */
+/* Explore & Suggested Feeds */
 function renderSuggestedFeeds() {
     const container = document.getElementById('suggestedFeeds');
+    const noFeedsMessage = document.getElementById('noFeedsMessage');
+    const paginationContainer = document.getElementById('explorePagination');
+
+    const searchValue = document.getElementById('exploreSearch').value.toLowerCase();
+    const categoryValue = document.getElementById('exploreCategoryFilter').value;
+
+    if (!allFeedsData || allFeedsData.length === 0) {
+      container.innerHTML = '';
+      paginationContainer.innerHTML = '';
+      noFeedsMessage.classList.remove('hidden');
+      noFeedsMessage.textContent = 'No feeds available.';
+      return;
+    }
+
+    const filtered = allFeedsData.filter(feed => {
+      const titleMatch = feed.title.toLowerCase().includes(searchValue);
+      const catMatch = categoryValue === '' || feed.category === categoryValue;
+      return titleMatch && catMatch;
+    });
+
     container.innerHTML = '';
+    paginationContainer.innerHTML = '';
 
-    suggestedFeeds.forEach((feed) => {
-        const feedButton = document.createElement('div');
-        feedButton.className = 'suggested-feed-item';
-        feedButton.textContent = feed.title;
-        feedButton.setAttribute('aria-label', `Add feed: ${feed.title}`);
+    if (filtered.length === 0) {
+      noFeedsMessage.classList.remove('hidden');
+    } else {
+      noFeedsMessage.classList.add('hidden');
+    }
 
-        feedButton.addEventListener('click', () => {
-            openFeedDetail(feed.url, feed.title, false, true);
+    // Pagination
+    const totalFeeds = filtered.length;
+    const totalPages = Math.ceil(totalFeeds / feedsPerPage);
+    const startIndex = (currentExplorePage - 1) * feedsPerPage;
+    const endIndex = startIndex + feedsPerPage;
+    const pageFeeds = filtered.slice(startIndex, endIndex);
+
+    pageFeeds.forEach(feed => {
+      const feedItem = document.createElement('div');
+      feedItem.className = 'suggested-feed-item';
+      feedItem.textContent = feed.title;
+      feedItem.addEventListener('click', () => openFeedDetail(feed.url, feed.title, false, true));
+      container.appendChild(feedItem);
+    });
+
+    if (totalPages > 1) {
+      for (let i = 1; i <= totalPages; i++) {
+        const pageBtn = document.createElement('button');
+        pageBtn.textContent = i;
+        pageBtn.disabled = (i === currentExplorePage);
+        pageBtn.addEventListener('click', () => {
+          currentExplorePage = i;
+          renderSuggestedFeeds();
         });
+        paginationContainer.appendChild(pageBtn);
+      }
+    }
+}
 
-        feedButton.addEventListener('keypress', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                feedButton.click();
-            }
-        });
+/* Managing Feeds */
+function getSavedFeeds() {
+    return JSON.parse(localStorage.getItem('savedFeeds')) || [];
+}
 
-        container.appendChild(feedButton);
+function loadSavedFeeds() {
+    const favoritesList = document.getElementById('favoritesList');
+    favoritesList.innerHTML = '';
+    const searchVal = document.getElementById('myFeedsSearch').value.toLowerCase();
+    let savedFeeds = getSavedFeeds();
+    if (searchVal) {
+      savedFeeds = savedFeeds.filter(f => f.title.toLowerCase().includes(searchVal));
+    }
+
+    if (currentlyViewingFeed && !isCurrentFeedSaved && (!searchVal || currentlyViewingFeed.title.toLowerCase().includes(searchVal))) {
+        favoritesList.appendChild(createFavoriteFeedItem(currentlyViewingFeed, true));
+    }
+
+    savedFeeds.forEach(feed => {
+        favoritesList.appendChild(createFavoriteFeedItem(feed, false));
+    });
+
+    Array.from(favoritesList.children).forEach(item => {
+      item.addEventListener('dragstart', handleDragStart);
+      item.addEventListener('dragover', handleDragOver);
+      item.addEventListener('drop', handleDrop);
+      item.addEventListener('dragend', handleDragEnd);
+      item.draggable = true;
     });
 }
 
-/* =========================================
-   Add a New Feed (Saved)
-========================================= */
+function createFavoriteFeedItem(feed, currentlyViewing) {
+    const favLink = document.createElement('div');
+    favLink.className = 'favorite-feed';
+    favLink.setAttribute('tabindex', '0');
+    favLink.setAttribute('data-url', feed.url);
+    favLink.textContent = feed.title;
+
+    if (currentlyViewing) {
+      favLink.classList.add('currently-viewing');
+    } else {
+      if (feed.url === currentFeedUrl && isCurrentFeedSaved) {
+        favLink.classList.add('selected');
+      }
+    }
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-feed-btn';
+    removeBtn.textContent = '✖';
+    removeBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      removeFeed(feed.url);
+    });
+    favLink.appendChild(removeBtn);
+
+    const renameIcon = document.createElement('span');
+    renameIcon.textContent = '✎';
+    renameIcon.className = 'rename-icon';
+    renameIcon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      startRenamingFeed(favLink, feed);
+    });
+    favLink.appendChild(renameIcon);
+
+    return favLink;
+}
+
 function addFeed(feedUrl, feedTitle) {
-    const savedFeeds = getSavedFeeds();
+    let savedFeeds = getSavedFeeds();
     if (savedFeeds.some(feed => feed.url === feedUrl)) {
         window.showToast('Feed already exists.', 'info');
         return;
@@ -156,42 +267,107 @@ function addFeed(feedUrl, feedTitle) {
     loadSavedFeeds();
 }
 
-/* =========================================
-   Saved Feeds Management
-========================================= */
-function getSavedFeeds() {
-    return JSON.parse(localStorage.getItem('savedFeeds')) || [];
+function removeFeed(feedUrl) {
+    let savedFeeds = getSavedFeeds();
+    savedFeeds = savedFeeds.filter(f => f.url !== feedUrl);
+    localStorage.setItem('savedFeeds', JSON.stringify(savedFeeds));
+    loadSavedFeeds();
+    if (currentFeedUrl === feedUrl) {
+        currentFeedUrl = null;
+        document.getElementById('feedDetailContainer').classList.add('hidden');
+        currentlyViewingFeed = null;
+        isCurrentFeedSaved = false;
+        updateSaveFeedButton();
+    }
 }
 
-function loadSavedFeeds() {
-    const savedFeeds = getSavedFeeds();
-    const favoritesList = document.getElementById('favoritesList');
-    favoritesList.innerHTML = '';
+function startRenamingFeed(feedElement, feed) {
+    const originalTitle = feed.title;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = originalTitle;
+    feedElement.innerHTML = '';
+    feedElement.appendChild(input);
+    input.focus();
 
-    // If currently viewing feed from explore not saved yet
-    if (currentlyViewingFeed) {
-        const cvItem = document.createElement('div');
-        cvItem.className = 'favorite-feed favorite-feed currently-viewing';
-        cvItem.setAttribute('tabindex', '0');
-        cvItem.setAttribute('data-url', currentlyViewingFeed.url);
-        cvItem.textContent = currentlyViewingFeed.title;
-        favoritesList.appendChild(cvItem);
-    }
-
-    savedFeeds.forEach((feed) => {
-        const favLink = document.createElement('div');
-        favLink.className = 'favorite-feed';
-        favLink.setAttribute('tabindex', '0');
-        favLink.setAttribute('data-url', feed.url);
-        favLink.textContent = feed.title;
-
-        // If this feed is currently selected, highlight it
-        if (feed.url === currentFeedUrl && isCurrentFeedSaved) {
-            favLink.classList.add('selected');
-        }
-
-        favoritesList.appendChild(favLink);
+    input.addEventListener('blur', () => finishRenamingFeed(feedElement, feed, input.value));
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') finishRenamingFeed(feedElement, feed, input.value);
     });
+}
+
+function finishRenamingFeed(feedElement, feed, newTitle) {
+    if (!newTitle.trim()) newTitle = feed.title;
+    feed.title = newTitle.trim();
+    updateFeedInStorage(feed);
+    feedElement.innerHTML = newTitle;
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-feed-btn';
+    removeBtn.textContent = '✖';
+    removeBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      removeFeed(feed.url);
+    });
+    feedElement.appendChild(removeBtn);
+
+    const renameIcon = document.createElement('span');
+    renameIcon.textContent = '✎';
+    renameIcon.className = 'rename-icon';
+    renameIcon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      startRenamingFeed(feedElement, feed);
+    });
+    feedElement.appendChild(renameIcon);
+}
+
+function updateFeedInStorage(updatedFeed) {
+    let savedFeeds = getSavedFeeds();
+    const idx = savedFeeds.findIndex(f => f.url === updatedFeed.url);
+    if (idx > -1) {
+      savedFeeds[idx].title = updatedFeed.title;
+      localStorage.setItem('savedFeeds', JSON.stringify(savedFeeds));
+    } else if (currentlyViewingFeed && currentlyViewingFeed.url === updatedFeed.url) {
+      currentlyViewingFeed.title = updatedFeed.title;
+    }
+    loadSavedFeeds();
+}
+
+/* Drag & Drop */
+let dragSrcEl = null;
+
+function handleDragStart(e) {
+  dragSrcEl = this;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', this.getAttribute('data-url'));
+}
+
+function handleDragOver(e) {
+  if (e.preventDefault) e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  return false;
+}
+
+function handleDrop(e) {
+  if (e.stopPropagation) e.stopPropagation();
+  if (dragSrcEl !== this) {
+    const draggedUrl = e.dataTransfer.getData('text/plain');
+    const originList = getSavedFeeds();
+    const draggedFeed = originList.find(f => f.url === draggedUrl);
+
+    const siblings = Array.from(this.parentNode.children).filter(c => c.classList.contains('favorite-feed'));
+    const dropIndex = siblings.indexOf(this);
+
+    originList.splice(originList.indexOf(draggedFeed), 1);
+    originList.splice(dropIndex - (currentlyViewingFeed && !isCurrentFeedSaved ? 1 : 0), 0, draggedFeed);
+    localStorage.setItem('savedFeeds', JSON.stringify(originList));
+    loadSavedFeeds();
+  }
+  return false;
+}
+
+function handleDragEnd(e) {
+  // optional: visual cleanup
 }
 
 function isFeedSaved(feedUrl) {
@@ -199,37 +375,13 @@ function isFeedSaved(feedUrl) {
     return savedFeeds.some(f => f.url === feedUrl && f.favorite);
 }
 
-function saveCurrentViewingFeed() {
-    if (!currentlyViewingFeed) return;
-
-    const savedFeeds = getSavedFeeds();
-    // If not already saved
-    if (!savedFeeds.some(f => f.url === currentlyViewingFeed.url)) {
-        savedFeeds.push({
-            title: currentlyViewingFeed.title,
-            url: currentlyViewingFeed.url,
-            favorite: true
-        });
-        localStorage.setItem('savedFeeds', JSON.stringify(savedFeeds));
-        window.showToast('Feed saved!', 'success');
-    }
-    // Clear currently viewing since now it's saved
-    currentlyViewingFeed = null;
-    isCurrentFeedSaved = true;
-    hideSaveFeedButton();
-    loadSavedFeeds();
-}
-
-/* =========================================
-   Open a Feed Detail (from Favorites or Explore)
-========================================= */
+/* Open & Render Feed Detail */
 async function openFeedDetail(feedUrl, feedTitle, feedSaved = false, fromExplore = false) {
     currentFeedUrl = feedUrl;
     currentFeedTitle = feedTitle;
     isCurrentFeedSaved = feedSaved;
 
     if (fromExplore && !feedSaved) {
-        // Set as currently viewing feed
         currentlyViewingFeed = { title: feedTitle, url: feedUrl };
     } else {
         currentlyViewingFeed = null;
@@ -263,9 +415,6 @@ async function openFeedDetail(feedUrl, feedTitle, feedSaved = false, fromExplore
     }
 }
 
-/* =========================================
-   Render Feed Detail
-========================================= */
 function renderFeedDetail(items) {
     const feedList = document.getElementById('feedList');
     const feedDetailContainer = document.getElementById('feedDetailContainer');
@@ -277,7 +426,6 @@ function renderFeedDetail(items) {
         return;
     }
 
-    // Show feed detail container
     feedDetailContainer.classList.remove('hidden');
 
     items.forEach((item) => {
@@ -287,25 +435,32 @@ function renderFeedDetail(items) {
         if (linkElement) {
             link = linkElement.getAttribute('href') || linkElement.textContent || '#';
         }
-        const description = item.querySelector('description, summary, content')?.textContent || 'No description available.';
 
-        // Store full description for modal
+        let description = 'No description available.';
+        const contentEncoded = item.querySelector('content\\:encoded');
+        if (contentEncoded && contentEncoded.textContent.trim()) {
+          description = contentEncoded.textContent;
+        } else {
+          const descEl = item.querySelector('description, summary, content');
+          if (descEl) description = descEl.textContent;
+        }
+
         articleContentMap.set(title, description);
 
         const feedItem = document.createElement('li');
         feedItem.className = 'feed-item';
         feedItem.innerHTML = `
-            <h4 tabindex="0" role="button" aria-label="Preview article: ${title}">${title}</h4>
+            <h4 tabindex="0" role="button">${title}</h4>
             <p>${window.stripHtml(description).slice(0, 200)}...</p>
             <button class="read-more-btn" aria-label="Read full article">Read More</button>
         `;
 
         const titleElement = feedItem.querySelector('h4');
         titleElement.addEventListener('click', () => openPreviewModal(title, description, link));
-        titleElement.addEventListener('keypress', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                titleElement.click();
+        titleElement.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openPreviewModal(title, description, link);
             }
         });
 
@@ -316,83 +471,47 @@ function renderFeedDetail(items) {
     });
 }
 
-/* =========================================
-   User Avatar Management
-========================================= */
-function loadUserAvatar() {
-    const userAvatar = document.getElementById('userAvatar');
-    const avatarInput = document.createElement('input');
-    avatarInput.type = 'file';
-    avatarInput.accept = 'image/*';
-    avatarInput.id = 'avatarInput';
-    avatarInput.style.display = 'none';
-    document.body.appendChild(avatarInput);
-    const removeAvatarBtn = document.getElementById('removeAvatarBtn');
-
-    if (!userAvatar || !removeAvatarBtn) {
-        return;
-    }
-
-    userAvatar.addEventListener('click', () => {
-        avatarInput.click();
-    });
-
-    userAvatar.parentElement.addEventListener('keypress', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            avatarInput.click();
-        }
-    });
-
-    avatarInput.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (file && file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const avatarDataUrl = e.target.result;
-                userAvatar.src = avatarDataUrl;
-                localStorage.setItem('userAvatar', avatarDataUrl);
-                window.showToast('Avatar updated successfully!', 'success');
-            };
-            reader.readAsDataURL(file);
-        } else {
-            window.showToast('Please upload a valid image file.', 'error');
-        }
-    });
-
-    const savedAvatar = localStorage.getItem('userAvatar');
-    if (savedAvatar) {
-        userAvatar.src = savedAvatar;
+/* Save Feed Button */
+function updateSaveFeedButton() {
+    const saveFeedBtn = document.getElementById('saveFeedBtn');
+    if (currentlyViewingFeed && !isCurrentFeedSaved) {
+        saveFeedBtn.classList.remove('hidden');
     } else {
-        userAvatar.src = 'default-avatar.png';
+        saveFeedBtn.classList.add('hidden');
     }
-
-    userAvatar.onerror = function() {
-        userAvatar.src = 'default-avatar.png';
-    };
-
-    removeAvatarBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        localStorage.removeItem('userAvatar');
-        userAvatar.src = 'default-avatar.png';
-        window.showToast('Avatar removed.', 'info');
-    });
 }
 
-/* =========================================
-   Preview Modal (Full Article)
-========================================= */
+function hideSaveFeedButton() {
+    document.getElementById('saveFeedBtn').classList.add('hidden');
+}
+
+function saveCurrentViewingFeed() {
+    if (!currentlyViewingFeed) return;
+
+    let savedFeeds = getSavedFeeds();
+    if (!savedFeeds.some(f => f.url === currentlyViewingFeed.url)) {
+        savedFeeds.push({
+            title: currentlyViewingFeed.title,
+            url: currentlyViewingFeed.url,
+            favorite: true
+        });
+        localStorage.setItem('savedFeeds', JSON.stringify(savedFeeds));
+        window.showToast('Feed saved!', 'success');
+    }
+
+    currentlyViewingFeed = null;
+    isCurrentFeedSaved = true;
+    hideSaveFeedButton();
+    loadSavedFeeds();
+}
+
+/* Modal */
 function setupPreviewModal() {
     const previewModal = document.getElementById('previewModal');
     const closePreviewModalBtn = document.getElementById('closePreviewModal');
+    if (!previewModal || !closePreviewModalBtn) return;
 
-    if (!previewModal || !closePreviewModalBtn) {
-        return;
-    }
-
-    closePreviewModalBtn.addEventListener('click', () => {
-        closePreviewModal();
-    });
+    closePreviewModalBtn.addEventListener('click', closePreviewModal);
 
     previewModal.addEventListener('click', (event) => {
         if (event.target === previewModal) {
@@ -413,9 +532,7 @@ function openPreviewModal(title, description, link) {
     const previewDescription = document.getElementById('previewDescription');
     const previewLink = document.getElementById('previewLink');
 
-    // Use full content from map
     const fullDescription = articleContentMap.get(title) || description;
-
     previewTitle.textContent = title;
     previewDescription.textContent = window.stripHtml(fullDescription);
     previewLink.href = link || '#';
@@ -432,9 +549,7 @@ function closePreviewModal() {
     previewModal.setAttribute('aria-hidden', 'true');
 }
 
-/* =========================================
-   Loading Bar
-========================================= */
+/* Loading Bar */
 let loadingInterval = null;
 
 function showLoadingBar() {
@@ -460,25 +575,73 @@ function hideLoadingBar() {
     loadingBar.style.width = '0%';
 }
 
-/* =========================================
-   Save Feed Button Management
-========================================= */
-function updateSaveFeedButton() {
-    const saveFeedBtn = document.getElementById('saveFeedBtn');
-    // Show if we have a currently viewing feed (from explore) not saved
-    if (currentlyViewingFeed && !isCurrentFeedSaved) {
-        saveFeedBtn.classList.remove('hidden');
+/* User Avatar */
+function loadUserAvatar() {
+    const userAvatar = document.getElementById('userAvatar');
+    const avatarInput = document.createElement('input');
+    avatarInput.type = 'file';
+    avatarInput.accept = 'image/*';
+    avatarInput.id = 'avatarInput';
+    avatarInput.style.display = 'none';
+    document.body.appendChild(avatarInput);
+    const removeAvatarBtn = document.getElementById('removeAvatarBtn');
+
+    if (!userAvatar || !removeAvatarBtn) return;
+
+    userAvatar.addEventListener('click', () => {
+        avatarInput.click();
+    });
+
+    userAvatar.parentElement.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            avatarInput.click();
+        }
+    });
+
+    avatarInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (file && file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const avatarDataUrl = e.target.result;
+                userAvatar.src = avatarDataUrl;
+                localStorage.setItem('userAvatar', avatarDataUrl);
+                window.showToast('Avatar updated successfully!', 'success');
+            };
+            reader.readAsDataURL(file);
+        } else {
+            window.showToast('Please upload a valid image file.', 'error');
+        }
+    });
+
+    const savedAvatar = localStorage.getItem('userAvatar');
+    if (savedAvatar) {
+        userAvatar.src = savedAvatar;
     } else {
-        saveFeedBtn.classList.add('hidden');
+        userAvatar.src = 'default-avatar.png';
+    }
+
+    userAvatar.onerror = () => {
+        userAvatar.src = 'default-avatar.png';
+    };
+
+    removeAvatarBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        localStorage.removeItem('userAvatar');
+        userAvatar.src = 'default-avatar.png';
+        window.showToast('Avatar removed.', 'info');
+    });
+}
+
+/* Onboarding Tooltip */
+function showOnboardingIfNeeded() {
+    if (!localStorage.getItem('hasSeenOnboarding')) {
+        const tooltip = document.getElementById('onboardingTooltip');
+        tooltip.classList.remove('hidden');
+        document.getElementById('closeTooltip').addEventListener('click', () => {
+          tooltip.classList.add('hidden');
+        });
+        localStorage.setItem('hasSeenOnboarding', 'true');
     }
 }
-
-function hideSaveFeedButton() {
-    const saveFeedBtn = document.getElementById('saveFeedBtn');
-    saveFeedBtn.classList.add('hidden');
-}
-
-/* =========================================
-   Helpers
-========================================= */
-// stripHtml and showToast are defined in helpers.js

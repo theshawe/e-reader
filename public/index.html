@@ -14,63 +14,64 @@
     </div>
     <div class="top-nav-center">
       <div class="fetch-bar">
-        <input type="text" id="rssUrl" placeholder="Enter RSS Feed URL" aria-label="RSS Feed URL">
-        <button id="fetchBtn" aria-label="Fetch RSS Feed">Fetch</button>
+        <input type="text" id="rssUrl" placeholder="Enter RSS Feed URL">
+        <button id="fetchBtn">Fetch</button>
       </div>
     </div>
     <div class="top-nav-right">
-      <button class="save-feed-btn hidden" id="saveFeedBtn" aria-label="Save Feed">Save Feed</button>
-      <div class="user-avatar" tabindex="0" role="button" aria-label="User Avatar">
+      <button class="save-feed-btn hidden" id="saveFeedBtn">Save Feed</button>
+      <div class="user-avatar" tabindex="0" aria-label="User Avatar">
         <img src="default-avatar.png" alt="User Avatar" class="avatar" id="userAvatar">
         <button class="remove-avatar-btn" id="removeAvatarBtn" aria-label="Remove Avatar">🗑️</button>
       </div>
     </div>
   </header>
   
-  <!-- Main Layout -->
   <div class="layout">
-    <!-- Sidebar Navigation -->
     <aside class="sidebar">
-      <h3 class="sidebar-heading">My Feeds</h3>
-      <div class="favorites-list" id="favoritesList">
-        <!-- Favorites and currently viewing feed will appear here -->
+      <h3 class="sidebar-heading" id="myFeedsHeading">My Feeds</h3>
+      <input type="text" id="myFeedsSearch" class="my-feeds-search" placeholder="Search my feeds...">
+      <div class="favorites-list-container" id="favoritesListContainer">
+        <div class="favorites-list" id="favoritesList"></div>
       </div>
       <div class="sidebar-separator"></div>
-      <div class="nav-item" data-view="explore" tabindex="0" role="button" aria-label="Explore">
-        <span>Explore</span>
-      </div>
+      <div class="nav-item" data-view="explore" tabindex="0">Explore</div>
     </aside>
     
-    <!-- Main Content Area -->
     <main class="main-content">
       <section class="view view-myfeeds visible">
         <div class="main-content-inner" id="mainContentInner">
-          <!-- If no feed is selected and not exploring, area is flush (no placeholder) -->
-          
-          <!-- Feed Detail Container (hidden by default) -->
           <section class="feed-detail-container hidden" id="feedDetailContainer">
-            <ul class="feed-list" id="feedList">
-              <!-- Feed articles will be populated here -->
-            </ul>
+            <ul class="feed-list" id="feedList"></ul>
           </section>
           
-          <!-- Explore Feeds Container (hidden by default) -->
           <section class="explore-container hidden" id="exploreContainer">
             <h2>Suggested Feeds</h2>
-            <p class="explore-hint">Discover new feeds to explore and potentially save to your favorites.</p>
-            <div class="suggested-feeds" id="suggestedFeeds">
-              <!-- Suggested feeds will be populated here -->
+            <p class="explore-hint">Discover new feeds. Use the search and filters below:</p>
+            <div class="explore-filters">
+              <input type="text" id="exploreSearch" placeholder="Search feeds...">
+              <select id="exploreCategoryFilter">
+                <option value="">All</option>
+                <option value="News">News</option>
+                <option value="Tech">Tech</option>
+                <option value="Podcasts">Podcasts</option>
+                <option value="YouTube">YouTube</option>
+                <option value="Music">Music</option>
+                <option value="Video">Video</option>
+              </select>
             </div>
+            <div class="suggested-feeds" id="suggestedFeeds"></div>
+            <p class="no-feeds-message hidden" id="noFeedsMessage">No feeds match your search/filter criteria.</p>
+            <div class="pagination" id="explorePagination"></div>
           </section>
         </div>
       </section>
     </main>
   </div>
   
-  <!-- Preview Modal -->
   <div class="modal hidden" id="previewModal" aria-hidden="true">
     <div class="modal-content">
-      <button class="close-modal" id="closePreviewModal" aria-label="Close Preview">✖️</button>
+      <button class="close-modal" id="closePreviewModal">✖️</button>
       <h3 id="previewTitle">Article Title</h3>
       <div class="preview-description-wrapper">
         <p id="previewDescription">Article description...</p>
@@ -79,13 +80,23 @@
     </div>
   </div>
   
-  <!-- Loading Bar -->
   <div class="loading-bar hidden" id="loadingBar" aria-label="Loading" role="status"></div>
   
-  <!-- Toast Container -->
+  <div class="onboarding-tooltip hidden" id="onboardingTooltip">
+    <p>Welcome! You can:</p>
+    <ul>
+      <li>Expand/collapse "My Feeds" by clicking its heading.</li>
+      <li>Filter & search in Explore to find feeds.</li>
+      <li>Click "Save Feed" to add to My Feeds; remove with '✖'.</li>
+      <li>Rename feeds via the edit icon ✎.</li>
+      <li>Reorder feeds by dragging the handle ⋮⋮ on hover.</li>
+      <li>"Read More" tries to show full content if available, else click "Read Source".</li>
+    </ul>
+    <button id="closeTooltip">Got it!</button>
+  </div>
+  
   <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
   
-  <!-- Scripts -->
   <script src="helpers.js"></script>
   <script src="app.js"></script>
 </body>
